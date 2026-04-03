@@ -1,0 +1,34 @@
+appId: com.warpsend.app
+productName: WarpSend
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - "!native/**"
+  - "!docs/**"
+  - "!.playwright-mcp/**"
+  - "!.claude/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.png
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: resources/icon.png
+  category: public.app-category.utilities
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: resources/icon.png
+  category: Network
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+npmRebuild: true
+asarUnpack:
+  - "**/*.node"
