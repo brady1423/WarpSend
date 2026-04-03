@@ -109,7 +109,8 @@ export class CryptoTunnel extends EventEmitter {
   }
 
   /**
-   * Encrypt data using ChaCha20-Poly1305 with the shared secret.
+   * Encrypt data using AES-256-GCM with the shared secret.
+   * (AES-256-GCM is universally supported across Node.js and Electron/BoringSSL)
    */
   private encrypt(plaintext: Buffer): Buffer {
     const nonce = Buffer.alloc(NONCE_SIZE)
@@ -117,10 +118,9 @@ export class CryptoTunnel extends EventEmitter {
     this.sendNonce++
 
     const cipher = crypto.createCipheriv(
-      'chacha20-poly1305',
+      'aes-256-gcm',
       this.sharedSecret!,
-      nonce,
-      { authTagLength: TAG_SIZE }
+      nonce
     )
 
     const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()])
@@ -131,7 +131,7 @@ export class CryptoTunnel extends EventEmitter {
   }
 
   /**
-   * Decrypt data using ChaCha20-Poly1305 with the shared secret.
+   * Decrypt data using AES-256-GCM with the shared secret.
    */
   private decrypt(packet: Buffer): Buffer {
     const nonce = packet.subarray(0, NONCE_SIZE)
@@ -139,10 +139,9 @@ export class CryptoTunnel extends EventEmitter {
     const ciphertext = packet.subarray(NONCE_SIZE + TAG_SIZE)
 
     const decipher = crypto.createDecipheriv(
-      'chacha20-poly1305',
+      'aes-256-gcm',
       this.sharedSecret!,
-      nonce,
-      { authTagLength: TAG_SIZE }
+      nonce
     )
     decipher.setAuthTag(tag)
 
