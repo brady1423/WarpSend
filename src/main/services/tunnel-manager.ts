@@ -1,13 +1,11 @@
 /**
  * TunnelManager — Manages encrypted tunnels to all paired friends.
  *
- * Handles:
- * - Starting/stopping tunnels per friend
- * - Reconnection logic
- * - Routing messages to the correct tunnel
- * - Online/offline status tracking
+ * Uses a SINGLE shared UDP socket on port 51820 for all connections.
+ * Routes incoming packets to the correct tunnel based on sender address.
  */
 
+import dgram from 'dgram'
 import { EventEmitter } from 'events'
 import { CryptoTunnel, TunnelConfig } from './crypto-tunnel'
 import {
@@ -22,53 +20,115 @@ import {
 export interface PeerConnection {
   friendId: string
   tunnel: CryptoTunnel
+  peerPublicKey: string
+  peerEndpoint: { host: string; port: number }
   state: 'connecting' | 'connected' | 'disconnected'
   reconnectAttempts: number
   reconnectTimer?: ReturnType<typeof setTimeout>
 }
 
-export interface TunnelManagerEvents {
-  'friend-online': (friendId: string) => void
-  'friend-offline': (friendId: string) => void
-  'control-message': (friendId: string, message: ControlMessage) => void
-  'data-message': (friendId: string, data: Buffer) => void
-  'error': (friendId: string, error: Error) => void
-}
-
 const MAX_RECONNECT_ATTEMPTS = 10
-const RECONNECT_BASE_DELAY = 2000 // 2 seconds, doubles each attempt
+const RECONNECT_BASE_DELAY = 2000
+const LISTEN_PORT = 51820
 
 export class TunnelManager extends EventEmitter {
   private connections = new Map<string, PeerConnection>()
   private localPrivateKey: string
   private receiveBuffer = new Map<string, Buffer>()
+  private sharedSocket: dgram.Socket | null = null
+  private socketReady = false
 
   constructor(localPrivateKey: string) {
     super()
     this.localPrivateKey = localPrivateKey
+    this.initSharedSocket()
   }
 
   /**
-   * Connect to a friend — start an encrypted tunnel.
+   * Create and bind the shared UDP socket.
+   * All tunnels send/receive through this single socket.
+   */
+  private initSharedSocket(): void {
+    this.sharedSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+
+    this.sharedSocket.on('message', (msg, rinfo) => {
+      this.routeIncomingPacket(msg, rinfo)
+    })
+
+    this.sharedSocket.on('error', (err) => {
+      // Port might be in use — try a random port
+      if (!this.socketReady) {
+        this.sharedSocket?.bind(0, () => {
+          this.socketReady = true
+        })
+      }
+    })
+
+    this.sharedSocket.bind(LISTEN_PORT, () => {
+      this.socketReady = true
+    })
+  }
+
+  /**
+   * Route an incoming UDP packet to the correct tunnel.
+   * Matches by sender address:port, or tries all tunnels if unknown.
+   */
+  private routeIncomingPacket(msg: Buffer, rinfo: dgram.RemoteInfo): void {
+    const senderKey = `${rinfo.address}:${rinfo.port}`
+
+    // First try exact match by known peer endpoint
+    for (const [, conn] of this.connections) {
+      const peerKey = `${conn.peerEndpoint.host}:${conn.peerEndpoint.port}`
+      if (peerKey === senderKey) {
+        conn.tunnel.injectPacket(msg, rinfo)
+        return
+      }
+    }
+
+    // No exact match — try all tunnels (peer may have a new IP/port)
+    // The tunnel will reject packets it can't decrypt
+    for (const [, conn] of this.connections) {
+      conn.tunnel.injectPacket(msg, rinfo)
+    }
+  }
+
+  /**
+   * Connect to a friend — start an encrypted tunnel using the shared socket.
    */
   async connect(
     friendId: string,
     peerPublicKey: string,
-    peerEndpoint: { host: string; port: number }
+    peerEndpoint: { host: string; port: number },
+    _localPort?: number
   ): Promise<void> {
     // Close existing connection if any
     this.disconnect(friendId)
 
+    // Wait for shared socket to be ready
+    if (!this.socketReady) {
+      await new Promise<void>((resolve) => {
+        const check = setInterval(() => {
+          if (this.socketReady) {
+            clearInterval(check)
+            resolve()
+          }
+        }, 100)
+      })
+    }
+
     const config: TunnelConfig = {
       localPrivateKey: this.localPrivateKey,
       peerPublicKey,
-      peerEndpoint
+      peerEndpoint,
+      sharedSocket: this.sharedSocket!
     }
 
     const tunnel = new CryptoTunnel(config)
     const connection: PeerConnection = {
       friendId,
       tunnel,
+      peerPublicKey,
+      peerEndpoint,
       state: 'connecting',
       reconnectAttempts: 0
     }
@@ -119,7 +179,7 @@ export class TunnelManager extends EventEmitter {
       const payloadLength = buffer.readUInt32BE(1)
       const totalLength = FRAME_HEADER_SIZE + payloadLength
 
-      if (buffer.length < totalLength) break // incomplete frame
+      if (buffer.length < totalLength) break
 
       const frame = buffer.subarray(0, totalLength)
       buffer = buffer.subarray(totalLength)
@@ -141,9 +201,6 @@ export class TunnelManager extends EventEmitter {
     this.receiveBuffer.set(friendId, buffer)
   }
 
-  /**
-   * Send a control message to a friend.
-   */
   sendControl(friendId: string, message: ControlMessage): void {
     const connection = this.connections.get(friendId)
     if (!connection || connection.state !== 'connected') {
@@ -153,9 +210,6 @@ export class TunnelManager extends EventEmitter {
     connection.tunnel.send(frame)
   }
 
-  /**
-   * Send binary data to a friend.
-   */
   sendData(friendId: string, data: Buffer): void {
     const connection = this.connections.get(friendId)
     if (!connection || connection.state !== 'connected') {
@@ -165,9 +219,6 @@ export class TunnelManager extends EventEmitter {
     connection.tunnel.send(frame)
   }
 
-  /**
-   * Disconnect from a specific friend.
-   */
   disconnect(friendId: string): void {
     const connection = this.connections.get(friendId)
     if (!connection) return
@@ -180,9 +231,6 @@ export class TunnelManager extends EventEmitter {
     this.receiveBuffer.delete(friendId)
   }
 
-  /**
-   * Schedule a reconnection attempt with exponential backoff.
-   */
   private scheduleReconnect(
     friendId: string,
     peerPublicKey: string,
@@ -191,9 +239,7 @@ export class TunnelManager extends EventEmitter {
     const connection = this.connections.get(friendId)
     if (!connection) return
 
-    if (connection.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      return // give up
-    }
+    if (connection.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return
 
     const delay = RECONNECT_BASE_DELAY * Math.pow(2, connection.reconnectAttempts)
     connection.reconnectAttempts++
@@ -205,37 +251,27 @@ export class TunnelManager extends EventEmitter {
     }, delay)
   }
 
-  /**
-   * Get the connection state for a specific friend.
-   */
   getConnectionState(friendId: string): 'connecting' | 'connected' | 'disconnected' | 'unknown' {
-    const connection = this.connections.get(friendId)
-    return connection?.state ?? 'unknown'
+    return this.connections.get(friendId)?.state ?? 'unknown'
   }
 
-  /**
-   * Get all connected friend IDs.
-   */
   getConnectedFriends(): string[] {
     return Array.from(this.connections.entries())
       .filter(([_, conn]) => conn.state === 'connected')
       .map(([id]) => id)
   }
 
-  /**
-   * Get the local port used for a specific friend's tunnel.
-   */
-  getLocalPort(friendId: string): number {
-    const connection = this.connections.get(friendId)
-    return connection?.tunnel.getLocalPort() ?? 0
+  getListenPort(): number {
+    return this.sharedSocket?.address()?.port ?? 0
   }
 
-  /**
-   * Disconnect from all friends and clean up.
-   */
   shutdown(): void {
     for (const [friendId] of this.connections) {
       this.disconnect(friendId)
+    }
+    if (this.sharedSocket) {
+      this.sharedSocket.close()
+      this.sharedSocket = null
     }
   }
 }

@@ -7,7 +7,8 @@ import {
   getAllFriends,
   addFriend,
   removeFriend,
-  getFriendByPublicKey
+  getFriendByPublicKey,
+  updateFriendOnlineStatus
 } from '../services/friends-db'
 import {
   encodeConnectionString,
@@ -16,6 +17,8 @@ import {
 import { getOrCreateDeviceKeys } from '../services/key-manager'
 import { getPublicEndpoint } from '../services/nat-traversal'
 import { TunnelManager } from '../services/tunnel-manager'
+
+const LISTEN_PORT = 51820 // Fixed port for incoming connections
 
 let tunnelManagerRef: TunnelManager | null = null
 
@@ -31,7 +34,7 @@ export function registerFriendsIpc(tunnelManager: TunnelManager): void {
     }
   })
 
-  // Generate a connection string for pairing (now with real STUN-discovered IP)
+  // Generate a connection string with real public IP and our listening port
   ipcMain.handle('friends:get-connection-string', async () => {
     try {
       const device = getOrCreateDeviceKeys()
@@ -40,7 +43,7 @@ export function registerFriendsIpc(tunnelManager: TunnelManager): void {
       const connectionString = encodeConnectionString({
         publicKey: device.publicKey,
         host: endpoint.host,
-        port: endpoint.port || 51820,
+        port: LISTEN_PORT,
         timestamp: Date.now()
       })
 
@@ -68,12 +71,13 @@ export function registerFriendsIpc(tunnelManager: TunnelManager): void {
         `${data.host}:${data.port}`
       )
 
-      // Establish tunnel
+      // Establish tunnel to the friend's endpoint, using our fixed listen port
       if (tunnelManagerRef) {
         tunnelManagerRef.connect(
           friend.id,
           data.publicKey,
-          { host: data.host, port: data.port }
+          { host: data.host, port: data.port },
+          LISTEN_PORT
         ).catch(() => {
           // Connection attempt failed — friend is saved but offline
         })
@@ -97,4 +101,27 @@ export function registerFriendsIpc(tunnelManager: TunnelManager): void {
       return { success: false, error: (err as Error).message }
     }
   })
+}
+
+/**
+ * On startup, try to reconnect to all saved friends.
+ */
+export function reconnectAllFriends(tunnelManager: TunnelManager): void {
+  const friends = getAllFriends()
+  for (const friend of friends) {
+    if (friend.lastKnownEndpoint) {
+      const [host, portStr] = friend.lastKnownEndpoint.split(':')
+      const port = parseInt(portStr, 10)
+      if (host && port) {
+        tunnelManager.connect(
+          friend.id,
+          friend.publicKey,
+          { host, port },
+          LISTEN_PORT
+        ).catch(() => {
+          // Can't reach friend — they'll show as offline
+        })
+      }
+    }
+  }
 }

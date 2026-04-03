@@ -4,7 +4,8 @@ import { is } from '@electron-toolkit/utils'
 import { getOrCreateDeviceKeys, getDeviceShortId, setDeviceName, closeDatabase } from './services/key-manager'
 import { setAllFriendsOffline } from './services/friends-db'
 import { TunnelManager } from './services/tunnel-manager'
-import { registerFriendsIpc } from './ipc/friends.ipc'
+import { registerFriendsIpc, reconnectAllFriends } from './ipc/friends.ipc'
+import { updateFriendOnlineStatus } from './services/friends-db'
 import { TransferEngine } from './services/transfer-engine'
 import { registerTransferIpc } from './ipc/transfer.ipc'
 import { QueueManager } from './services/queue-manager'
@@ -160,6 +161,7 @@ function initializeTunnelManager(): void {
   tunnelManager = new TunnelManager(device.privateKey)
 
   tunnelManager.on('friend-online', (friendId: string) => {
+    updateFriendOnlineStatus(friendId, true)
     mainWindow?.webContents.send('tunnel:friend-status', {
       friendId,
       status: 'online'
@@ -167,6 +169,7 @@ function initializeTunnelManager(): void {
   })
 
   tunnelManager.on('friend-offline', (friendId: string) => {
+    updateFriendOnlineStatus(friendId, false)
     mainWindow?.webContents.send('tunnel:friend-status', {
       friendId,
       status: 'offline'
@@ -266,6 +269,11 @@ app.whenReady().then(() => {
   registerFriendsIpc(tunnelManager!)
   registerTransferIpc(transferEngine!, () => mainWindow)
   createWindow()
+
+  // Try to reconnect to all saved friends after a short delay
+  setTimeout(() => {
+    reconnectAllFriends(tunnelManager!)
+  }, 2000)
   createTray()
 
   app.on('activate', () => {

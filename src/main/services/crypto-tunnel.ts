@@ -23,6 +23,7 @@ export interface TunnelConfig {
   peerPublicKey: string     // base64 raw 32-byte X25519 public key
   peerEndpoint: { host: string; port: number }
   localPort?: number
+  sharedSocket?: dgram.Socket  // optional: use an existing socket instead of creating one
 }
 
 export interface TunnelEvents {
@@ -37,6 +38,7 @@ type TunnelState = 'idle' | 'handshaking' | 'connected' | 'disconnected'
 export class CryptoTunnel extends EventEmitter {
   private config: TunnelConfig
   private socket: dgram.Socket | null = null
+  private ownsSocket: boolean = true  // false if using a shared socket
   private sharedSecret: Buffer | null = null
   private sendNonce = 0n
   private recvNonce = 0n
@@ -157,7 +159,18 @@ export class CryptoTunnel extends EventEmitter {
     this.sharedSecret = this.deriveSharedSecret()
     this.state = 'handshaking'
 
+    if (this.config.sharedSocket) {
+      // Use the provided shared socket (TunnelManager routes packets to us)
+      this.socket = this.config.sharedSocket
+      this.ownsSocket = false
+      this.sendHandshake()
+      this.startHandshakeRetry()
+      return
+    }
+
+    // Create our own socket
     this.socket = dgram.createSocket('udp4')
+    this.ownsSocket = true
 
     this.socket.on('message', (msg, rinfo) => {
       this.handlePacket(msg, rinfo)
@@ -176,6 +189,13 @@ export class CryptoTunnel extends EventEmitter {
 
       this.socket!.on('error', reject)
     })
+  }
+
+  /**
+   * Feed a packet from an external shared socket into this tunnel.
+   */
+  injectPacket(msg: Buffer, rinfo: dgram.RemoteInfo): void {
+    this.handlePacket(msg, rinfo)
   }
 
   /**
@@ -235,8 +255,13 @@ export class CryptoTunnel extends EventEmitter {
   /**
    * Handle an incoming UDP packet.
    */
-  private handlePacket(msg: Buffer, _rinfo: dgram.RemoteInfo): void {
+  private handlePacket(msg: Buffer, rinfo: dgram.RemoteInfo): void {
     this.lastRecvTime = Date.now()
+
+    // Update peer endpoint if it changed (NAT rebinding, roaming)
+    if (rinfo.address !== this.config.peerEndpoint.host || rinfo.port !== this.config.peerEndpoint.port) {
+      this.config.peerEndpoint = { host: rinfo.address, port: rinfo.port }
+    }
 
     // Check if this is a handshake packet
     if (msg.length >= 4 && msg.subarray(0, 4).equals(HANDSHAKE_MAGIC)) {
@@ -360,7 +385,7 @@ export class CryptoTunnel extends EventEmitter {
     this.state = 'disconnected'
     if (this.keepaliveTimer) clearInterval(this.keepaliveTimer)
     if (this.handshakeTimer) clearInterval(this.handshakeTimer)
-    if (this.socket) {
+    if (this.socket && this.ownsSocket) {
       this.socket.close()
       this.socket = null
     }
