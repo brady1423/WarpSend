@@ -15,7 +15,8 @@ export function useAppInit() {
     addIncomingRequest,
     removeIncomingRequest,
     removeTransfer,
-    setQueueCounts
+    setQueueCounts,
+    addTextMessage
   } = useAppStore()
 
   useEffect(() => {
@@ -64,6 +65,18 @@ export function useAppInit() {
       removeIncomingRequest(data.transferId)
     })
 
+    // Subscribe to incoming text messages
+    const unsubTextMessage = (api as any).text?.onIncoming?.((data: any) => {
+      addTextMessage({
+        friendId: data.friendId,
+        messageId: data.messageId,
+        text: data.text,
+        timestamp: data.timestamp,
+        direction: 'received'
+      })
+      showToast('New text message received', 'info')
+    })
+
     // Stale request cleanup — remove pending incoming requests older than 60s
     const staleTimer = setInterval(() => {
       const state = useAppStore.getState()
@@ -81,6 +94,7 @@ export function useAppInit() {
       unsubIncoming()
       unsubFailed?.()
       unsubCompleted?.()
+      unsubTextMessage?.()
       clearInterval(staleTimer)
     }
   }, [])

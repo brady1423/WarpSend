@@ -18,6 +18,7 @@ export function SendTab() {
   const setFriends = useAppStore((s) => s.setFriends)
   const activeTransfers = useAppStore((s) => s.activeTransfers)
   const queueCounts = useAppStore((s) => s.queueCounts)
+  const addTextMessage = useAppStore((s) => s.addTextMessage)
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [sending, setSending] = useState<string | null>(null) // friendId being sent to
   const [showTextModal, setShowTextModal] = useState(false)
@@ -79,7 +80,16 @@ export function SendTab() {
         await window.api?.transfers?.send(friend.id, selectedFiles)
       }
       if (pendingText) {
-        await (window.api as any)?.transfers?.sendText(friend.id, pendingText)
+        const result = await (window.api as any)?.transfers?.sendText(friend.id, pendingText)
+        if (result?.success) {
+          addTextMessage({
+            friendId: friend.id,
+            messageId: result.messageId,
+            text: pendingText,
+            timestamp: Date.now(),
+            direction: 'sent'
+          })
+        }
       }
       setSelectedFiles([])
       setPendingText(null)

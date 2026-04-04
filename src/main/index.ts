@@ -120,20 +120,31 @@ function createTray(): void {
  * Generate a tiny tray icon programmatically (16x16 PNG with a teal dot).
  */
 function createTrayIconBuffer(): Buffer {
-  // Minimal 16x16 RGBA pixel data — teal (#2dd4bf) circle on transparent
+  // 16x16 RGBA pixel data — teal portal ring on dark background
   const size = 16
   const data = Buffer.alloc(size * size * 4, 0) // RGBA, all transparent
 
-  const cx = 8, cy = 8, r = 6
+  const cx = 8, cy = 8
+  const outerR = 7, innerR = 4
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx = x - cx, dy = y - cy
-      if (dx * dx + dy * dy <= r * r) {
-        const offset = (y * size + x) * 4
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const offset = (y * size + x) * 4
+
+      if (dist <= outerR && dist >= innerR) {
+        // Ring area — teal
         data[offset] = 0x2d     // R
         data[offset + 1] = 0xd4 // G
         data[offset + 2] = 0xbf // B
         data[offset + 3] = 0xff // A
+      } else if (dist < innerR || dist <= outerR + 1) {
+        // Dark background fill for inner area and slight border
+        data[offset] = 0x1a     // R
+        data[offset + 1] = 0x1a // G
+        data[offset + 2] = 0x2e // B
+        data[offset + 3] = dist < innerR ? 0xcc : 0x44 // A
       }
     }
   }
@@ -190,26 +201,30 @@ function initializeTunnelManager(): void {
     )
   })
 
-  transferEngine.on('transfer-complete', (_id: string, direction: string, friendId: string) => {
+  transferEngine.on('transfer-complete', (_id: string, direction: string, friendId: string, fileName: string, fileSize: number) => {
     incrementTransferCount(friendId)
     if (direction === 'receiving') {
       showNotification('Transfer Complete', 'File received successfully')
     }
+    addTransferHistory(friendId, fileName, fileSize, direction as 'sending' | 'receiving', 'completed')
   })
 
-  // Log completed transfers to history
-  transferEngine.on('transfer-complete', (transferId: string, direction: string, friendId: string) => {
-    const transfers = transferEngine!.getActiveTransfers()
-    const t = transfers.find((tr) => tr.transferId === transferId)
-    if (t) {
-      addTransferHistory(friendId, t.fileName, t.fileSize, direction as 'sending' | 'receiving', 'completed')
+  // Handle incoming text messages
+  tunnelManager.on('control-message', (friendId: string, message: any) => {
+    if (message.type === 'TEXT_MESSAGE') {
+      mainWindow?.webContents.send('text:incoming', {
+        friendId,
+        messageId: message.messageId,
+        text: message.text,
+        timestamp: message.timestamp
+      })
+      showNotification('New Message', 'Received a text message')
     }
   })
 
-  // Handle failed transfers — notify + log to history
-  transferEngine.on('transfer-failed', (transferId: string, _reason: string) => {
+  // Handle failed transfers — notify (renderer forwarding handled in transfer.ipc.ts)
+  transferEngine.on('transfer-failed', (_transferId: string, _reason: string) => {
     showNotification('Transfer Failed', 'A file transfer could not be completed')
-    mainWindow?.webContents.send('transfer:failed', { transferId })
   })
 }
 
@@ -305,7 +320,7 @@ app.whenReady().then(() => {
   setAllFriendsOffline()
   initializeTunnelManager()
   registerFriendsIpc(tunnelManager!)
-  registerTransferIpc(transferEngine!, () => mainWindow)
+  registerTransferIpc(transferEngine!, () => mainWindow, tunnelManager!)
   registerHistoryIpc()
   createWindow()
 

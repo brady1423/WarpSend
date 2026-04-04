@@ -3,14 +3,15 @@
  */
 
 import { ipcMain, BrowserWindow, dialog } from 'electron'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
+import { v4 as uuidv4 } from 'uuid'
 import { TransferEngine } from '../services/transfer-engine'
+import { TunnelManager } from '../services/tunnel-manager'
+import type { TextMessage } from '../services/protocol'
 
 export function registerTransferIpc(
   transferEngine: TransferEngine,
-  getMainWindow: () => BrowserWindow | null
+  getMainWindow: () => BrowserWindow | null,
+  tunnelManager: TunnelManager
 ): void {
   // Send file(s) to a friend
   ipcMain.handle('transfer:send', async (_event, friendId: string, filePaths: string[]) => {
@@ -30,22 +31,21 @@ export function registerTransferIpc(
     }
   })
 
-  // Send text as a temporary .txt file
+  // Send text as an inline control message (no file creation)
   ipcMain.handle('transfer:send-text', async (_event, friendId: string, text: string) => {
     try {
-      const tmpDir = path.join(os.tmpdir(), 'warpsend-text')
-      fs.mkdirSync(tmpDir, { recursive: true })
-      const tmpFile = path.join(tmpDir, `message-${Date.now()}.txt`)
-      fs.writeFileSync(tmpFile, text, 'utf-8')
-      const transfer = await transferEngine.initiateTransfer(friendId, tmpFile)
-      return {
-        success: true,
-        transfer: {
-          transferId: transfer.transferId,
-          fileName: transfer.fileName,
-          fileSize: transfer.fileSize
-        }
+      const messageId = uuidv4()
+      const message: TextMessage = {
+        type: 'TEXT_MESSAGE',
+        messageId,
+        text,
+        timestamp: Date.now()
       }
+      if (text.length > 10000) {
+        return { success: false, error: 'Message too long (max 10,000 characters)' }
+      }
+      tunnelManager.sendControl(friendId, message)
+      return { success: true, messageId }
     } catch (err) {
       return { success: false, error: (err as Error).message }
     }

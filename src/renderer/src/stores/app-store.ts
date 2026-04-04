@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Friend, TransferProgress, TransferRequest, DeviceInfo } from '../types'
+import type { Friend, TransferProgress, TransferRequest, DeviceInfo, TextMessageEntry } from '../types'
 
 interface AppState {
   // Device
@@ -14,6 +14,9 @@ interface AppState {
   activeTransfers: TransferProgress[]
   incomingRequests: TransferRequest[]
 
+  // Text messages
+  textMessages: TextMessageEntry[]
+
   // Actions
   setDeviceInfo: (info: DeviceInfo) => void
   setConnectionString: (cs: string) => void
@@ -24,6 +27,7 @@ interface AppState {
   removeTransfer: (transferId: string) => void
   addIncomingRequest: (request: TransferRequest) => void
   removeIncomingRequest: (transferId: string) => void
+  addTextMessage: (msg: TextMessageEntry) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -33,6 +37,7 @@ export const useAppStore = create<AppState>((set) => ({
   queueCounts: {},
   activeTransfers: [],
   incomingRequests: [],
+  textMessages: [],
 
   setDeviceInfo: (info) => set({ deviceInfo: info }),
   setConnectionString: (cs) => set({ connectionString: cs }),
@@ -85,5 +90,10 @@ export const useAppStore = create<AppState>((set) => ({
       incomingRequests: state.incomingRequests.filter(
         (r) => r.transferId !== transferId
       )
+    })),
+
+  addTextMessage: (msg) =>
+    set((state) => ({
+      textMessages: [...state.textMessages, msg].slice(-100)
     }))
 }))

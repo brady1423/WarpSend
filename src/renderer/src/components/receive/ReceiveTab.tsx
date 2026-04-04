@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Shield, Copy, Check, RefreshCw } from 'lucide-react'
+import { Shield, Copy, Check, RefreshCw, MessageCircle } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { IncomingTransferCard } from '../shared/IncomingTransferCard'
 import { ProgressBar } from '../shared/ProgressBar'
@@ -17,6 +17,8 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
   const incomingRequests = useAppStore((s) => s.incomingRequests)
   const removeIncomingRequest = useAppStore((s) => s.removeIncomingRequest)
   const activeTransfers = useAppStore((s) => s.activeTransfers)
+  const textMessages = useAppStore((s) => s.textMessages)
+  const friends = useAppStore((s) => s.friends)
 
   const receivingTransfers = activeTransfers.filter((t) => t.direction === 'receiving')
 
@@ -148,8 +150,42 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
         </div>
       )}
 
+      {/* Text messages */}
+      {textMessages.length > 0 && (
+        <div className="w-full max-w-md space-y-3 mb-6">
+          <h3 className="text-xs font-medium text-warp-text-secondary uppercase tracking-wider">
+            Messages
+          </h3>
+          {textMessages.slice(-20).reverse().map((msg) => {
+            const friend = friends.find((f) => f.id === msg.friendId)
+            const senderName = friend?.nickname || friend?.displayName || 'Unknown'
+            return (
+              <div
+                key={msg.messageId}
+                className={`bg-warp-card rounded-xl border p-3 ${
+                  msg.direction === 'sent'
+                    ? 'border-warp-accent/20 ml-8'
+                    : 'border-warp-border mr-8'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <MessageCircle size={12} className={msg.direction === 'sent' ? 'text-warp-accent' : 'text-warp-online'} />
+                  <span className="text-xs text-warp-text-muted">
+                    {msg.direction === 'sent' ? `To ${senderName}` : `From ${senderName}`}
+                  </span>
+                </div>
+                <p className="text-sm text-warp-text whitespace-pre-wrap break-words">{msg.text}</p>
+                <p className="text-xs text-warp-text-muted mt-1.5">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Empty state */}
-      {incomingRequests.length === 0 && receivingTransfers.length === 0 && (
+      {incomingRequests.length === 0 && receivingTransfers.length === 0 && textMessages.length === 0 && (
         <p className="text-sm text-warp-text-muted mt-4">
           No incoming transfers
         </p>

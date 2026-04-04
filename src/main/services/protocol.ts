@@ -77,6 +77,13 @@ export interface StatusUpdate {
   online: boolean
 }
 
+export interface TextMessage {
+  type: 'TEXT_MESSAGE'
+  messageId: string
+  text: string
+  timestamp: number
+}
+
 export type ControlMessage =
   | PairRequest
   | PairResponse
@@ -90,6 +97,7 @@ export type ControlMessage =
   | Ping
   | Pong
   | StatusUpdate
+  | TextMessage
 
 // ── Binary Data Message ────────────────────────────────────────────
 

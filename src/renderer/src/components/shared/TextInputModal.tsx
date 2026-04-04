@@ -34,16 +34,17 @@ export function TextInputModal({ initialText = '', onSend, onClose }: TextInputM
         <div className="p-5 space-y-4">
           <textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => setText(e.target.value.slice(0, 10000))}
             placeholder="Type your message..."
             rows={6}
+            maxLength={10000}
             autoFocus
             className="no-drag w-full bg-warp-card border border-warp-border rounded-lg px-3 py-2.5 text-sm text-warp-text placeholder:text-warp-text-muted focus:outline-none focus:border-warp-accent/50 focus:ring-1 focus:ring-warp-accent/20 transition-all resize-none"
           />
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-warp-text-muted">
-              {text.length} characters
+            <span className={`text-xs ${text.length >= 10000 ? 'text-warp-error' : 'text-warp-text-muted'}`}>
+              {text.length.toLocaleString()} / 10,000
             </span>
             <button
               onClick={handleSend}

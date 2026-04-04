@@ -55,6 +55,13 @@ const api = {
     list: (friendId?: string) => ipcRenderer.invoke('history:list', friendId),
     clear: (friendId?: string) => ipcRenderer.invoke('history:clear', friendId)
   },
+  text: {
+    onIncoming: (callback: (data: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
+      ipcRenderer.on('text:incoming', listener)
+      return () => ipcRenderer.removeListener('text:incoming', listener)
+    }
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),

@@ -328,7 +328,7 @@ export class TransferEngine extends EventEmitter {
           transferId: transfer.transferId
         })
         this.emitProgress(transfer)
-        this.emit('transfer-complete', transfer.transferId, transfer.direction, transfer.friendId)
+        this.emit('transfer-complete', transfer.transferId, transfer.direction, transfer.friendId, transfer.fileName, transfer.fileSize)
       }
     }
 
@@ -478,7 +478,7 @@ export class TransferEngine extends EventEmitter {
       transfer.filePath = uniquePath
     }
     this.emitProgress(transfer)
-    this.emit('transfer-complete', transferId, 'receiving', transfer.friendId)
+    this.emit('transfer-complete', transferId, 'receiving', transfer.friendId, transfer.fileName, transfer.fileSize)
   }
 
   private handleTransferDeclined(transferId: string): void {

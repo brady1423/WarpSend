@@ -60,6 +60,14 @@ export interface TransferHistoryEntry {
   completedAt: string | null
 }
 
+export interface TextMessageEntry {
+  friendId: string
+  messageId: string
+  text: string
+  timestamp: number
+  direction: 'sent' | 'received'
+}
+
 export interface AppSettings {
   deviceName: string
   downloadFolder: string
