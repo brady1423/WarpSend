@@ -77,7 +77,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   addIncomingRequest: (request) =>
     set((state) => ({
-      incomingRequests: [...state.incomingRequests, request]
+      incomingRequests: [...state.incomingRequests, { ...request, _addedAt: Date.now() }]
     })),
 
   removeIncomingRequest: (transferId) =>

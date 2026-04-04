@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { UserPlus, Copy, Check, ArrowRight, X, Trash2 } from 'lucide-react'
+import { UserPlus, Copy, Check, ArrowRight, X, Trash2, Clock, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../stores/app-store'
 
@@ -9,6 +9,10 @@ export function FriendsTab() {
   const [copied, setCopied] = useState(false)
   const [pairStatus, setPairStatus] = useState<'idle' | 'pairing' | 'success' | 'error'>('idle')
   const [pairError, setPairError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [selectedHistory, setSelectedHistory] = useState<string | null>(null)
+  const [history, setHistory] = useState<any[]>([])
   const friends = useAppStore((s) => s.friends)
   const setFriends = useAppStore((s) => s.setFriends)
   const connectionString = useAppStore((s) => s.connectionString)
@@ -73,6 +77,32 @@ export function FriendsTab() {
     }
   }
 
+  const handleViewHistory = async (friendId: string) => {
+    if (selectedHistory === friendId) {
+      setSelectedHistory(null)
+      setHistory([])
+      return
+    }
+    setSelectedHistory(friendId)
+    try {
+      const result = await (window.api as any)?.history?.list(friendId)
+      if (result?.success) setHistory(result.history)
+    } catch {}
+  }
+
+  const handleStartEdit = (friend: any) => {
+    setEditingId(friend.id)
+    setEditName(friend.nickname || friend.displayName)
+  }
+
+  const handleSaveNickname = async (id: string) => {
+    try {
+      await (window.api as any)?.friends?.setNickname(id, editName)
+      setEditingId(null)
+      loadFriends()
+    } catch {}
+  }
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -91,15 +121,15 @@ export function FriendsTab() {
       {friends.length > 0 ? (
         <div className="space-y-2">
           {friends.map((friend) => (
+            <div key={friend.id}>
             <div
-              key={friend.id}
               className="flex items-center gap-3 px-4 py-3 bg-warp-card rounded-xl border border-warp-border"
             >
               {/* Avatar */}
               <div className="relative">
                 <div className="w-10 h-10 rounded-full bg-warp-accent/10 flex items-center justify-center">
                   <span className="text-sm font-semibold text-warp-accent">
-                    {friend.displayName[0]}
+                    {(friend.nickname || friend.displayName)[0]}
                   </span>
                 </div>
                 <div
@@ -112,7 +142,28 @@ export function FriendsTab() {
 
               {/* Info */}
               <div className="flex-1">
-                <p className="text-sm font-medium text-warp-text">{friend.displayName}</p>
+                {editingId === friend.id ? (
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onBlur={() => handleSaveNickname(friend.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveNickname(friend.id)
+                      if (e.key === 'Escape') setEditingId(null)
+                    }}
+                    autoFocus
+                    className="no-drag w-full bg-warp-card border border-warp-accent/50 rounded px-2 py-0.5 text-sm text-warp-text focus:outline-none focus:ring-1 focus:ring-warp-accent/20"
+                  />
+                ) : (
+                  <p
+                    className="text-sm font-medium text-warp-text cursor-pointer hover:text-warp-accent transition-colors"
+                    onClick={() => handleStartEdit(friend)}
+                    title="Click to set nickname"
+                  >
+                    {friend.nickname || friend.displayName}
+                  </p>
+                )}
                 <p className="text-xs text-warp-text-muted">
                   {friend.isOnline
                     ? 'Online'
@@ -127,6 +178,19 @@ export function FriendsTab() {
                 {friend.transferCount} transfers
               </span>
 
+              {/* History button */}
+              <button
+                onClick={() => handleViewHistory(friend.id)}
+                className={`no-drag p-1.5 rounded transition-colors ${
+                  selectedHistory === friend.id
+                    ? 'text-warp-accent'
+                    : 'text-warp-text-muted hover:text-warp-accent'
+                }`}
+                title="Transfer history"
+              >
+                <Clock size={14} />
+              </button>
+
               {/* Remove button */}
               <button
                 onClick={() => handleRemoveFriend(friend.id)}
@@ -135,6 +199,26 @@ export function FriendsTab() {
               >
                 <Trash2 size={14} />
               </button>
+            </div>
+            {selectedHistory === friend.id && (
+              <div className="ml-6 mt-1 mb-2 space-y-1">
+                {history.length > 0 ? history.map((h: any) => (
+                  <div key={h.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-warp-text-secondary">
+                    {h.direction === 'sending' ? (
+                      <ArrowUpRight size={12} className="text-warp-accent shrink-0" />
+                    ) : (
+                      <ArrowDownLeft size={12} className="text-warp-online shrink-0" />
+                    )}
+                    <span className="truncate flex-1">{h.fileName}</span>
+                    <span className="text-warp-text-muted shrink-0">
+                      {new Date(h.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                )) : (
+                  <p className="text-xs text-warp-text-muted px-3 py-1.5">No transfer history</p>
+                )}
+              </div>
+            )}
             </div>
           ))}
         </div>

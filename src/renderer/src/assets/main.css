@@ -89,6 +89,57 @@ html, body, #root {
               0 0 40px var(--color-warp-accent-glow);
 }
 
+/* Shield breathing/pulse animation */
+@keyframes shield-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px var(--color-warp-accent-glow),
+                0 0 40px var(--color-warp-accent-glow);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 35px var(--color-warp-accent-glow),
+                0 0 70px var(--color-warp-accent-glow);
+  }
+}
+
+.shield-pulse {
+  animation: shield-pulse 3s ease-in-out infinite;
+}
+
+/* Shield icon glow animation */
+@keyframes icon-glow {
+  0%, 100% { opacity: 0.9; filter: drop-shadow(0 0 4px var(--color-warp-accent-glow)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 10px var(--color-warp-accent-glow)); }
+}
+
+.icon-glow {
+  animation: icon-glow 3s ease-in-out infinite;
+}
+
+/* Toast slide-up animation */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.2s ease-out;
+}
+
+/* ── Themes ─────────────────────────────────────────── */
+
+/* Onyx Black theme */
+[data-theme="onyx-black"] {
+  --color-warp-bg: #000000;
+  --color-warp-surface: #0a0a0a;
+  --color-warp-card: #111111;
+  --color-warp-card-hover: #1a1a1a;
+  --color-warp-border: #222222;
+  --color-warp-sidebar: #000000;
+  --color-warp-sidebar-active: #111111;
+}
+
 /* Connection string monospace styling */
 .connection-string {
   font-family: var(--font-mono);

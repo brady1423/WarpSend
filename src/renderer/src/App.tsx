@@ -6,6 +6,7 @@ import { FriendsTab } from './components/friends/FriendsTab'
 import { SettingsTab } from './components/settings/SettingsTab'
 import { useAppInit } from './hooks/useAppInit'
 import { useAppStore } from './stores/app-store'
+import { ToastContainer } from './components/shared/Toast'
 
 type Tab = 'receive' | 'send' | 'friends' | 'settings'
 
@@ -34,6 +35,7 @@ export default function App() {
           {activeTab === 'settings' && <SettingsTab />}
         </div>
       </main>
+      <ToastContainer />
     </div>
   )
 }

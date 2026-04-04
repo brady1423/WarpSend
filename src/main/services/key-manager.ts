@@ -78,6 +78,41 @@ function initSchema(database: Database.Database): void {
       value TEXT NOT NULL
     );
   `)
+
+  // Migration: add nickname column to friends
+  const hasNickname = database.prepare(
+    "SELECT COUNT(*) as cnt FROM pragma_table_info('friends') WHERE name='nickname'"
+  ).get() as { cnt: number }
+  if (hasNickname.cnt === 0) {
+    database.exec('ALTER TABLE friends ADD COLUMN nickname TEXT')
+  }
+}
+
+const ADJECTIVES = [
+  'Swift', 'Neon', 'Cosmic', 'Shadow', 'Crimson', 'Azure', 'Golden', 'Silver',
+  'Phantom', 'Stellar', 'Thunder', 'Crystal', 'Ember', 'Frost', 'Midnight',
+  'Solar', 'Lunar', 'Storm', 'Nova', 'Blaze', 'Iron', 'Copper', 'Violet',
+  'Onyx', 'Jade', 'Cobalt', 'Scarlet', 'Arctic', 'Turbo', 'Quantum',
+  'Stealth', 'Rapid', 'Bright', 'Dark', 'Wild', 'Silent', 'Bold', 'Fierce',
+  'Noble', 'Mystic', 'Primal', 'Rogue', 'Vivid', 'Hyper', 'Ultra', 'Mega',
+  'Alpha', 'Omega', 'Zen', 'Apex'
+]
+
+const ANIMALS = [
+  'Falcon', 'Panther', 'Wolf', 'Eagle', 'Tiger', 'Hawk', 'Lion', 'Bear',
+  'Viper', 'Phoenix', 'Dragon', 'Shark', 'Raven', 'Fox', 'Lynx',
+  'Cobra', 'Jaguar', 'Puma', 'Osprey', 'Orca', 'Mantis', 'Condor',
+  'Raptor', 'Stallion', 'Mustang', 'Cheetah', 'Leopard', 'Badger',
+  'Cougar', 'Bison', 'Crane', 'Heron', 'Sparrow', 'Orion', 'Coyote',
+  'Moose', 'Elk', 'Ibis', 'Kite', 'Merlin', 'Peregrine', 'Stork',
+  'Wren', 'Finch', 'Robin', 'Dove', 'Owl', 'Gecko', 'Mamba', 'Taipan'
+]
+
+function generateDeviceName(publicKey: string): string {
+  const bytes = Buffer.from(publicKey, 'base64')
+  const adjIndex = bytes[0] % ADJECTIVES.length
+  const animalIndex = bytes[1] % ANIMALS.length
+  return `${ADJECTIVES[adjIndex]} ${ANIMALS[animalIndex]}`
 }
 
 /**
@@ -119,9 +154,10 @@ export function getOrCreateDeviceKeys(): DeviceInfo {
   }
 
   const keys = generateKeypair()
+  const deviceName = generateDeviceName(keys.publicKey)
   database.prepare(
-    'INSERT INTO device (id, private_key, public_key) VALUES (1, ?, ?)'
-  ).run(keys.privateKey, keys.publicKey)
+    'INSERT INTO device (id, private_key, public_key, device_name) VALUES (1, ?, ?, ?)'
+  ).run(keys.privateKey, keys.publicKey, deviceName)
 
   const created = database.prepare('SELECT * FROM device WHERE id = 1').get() as Record<string, string>
   return {

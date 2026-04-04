@@ -9,12 +9,18 @@ const api = {
     list: () => ipcRenderer.invoke('friends:list'),
     getConnectionString: () => ipcRenderer.invoke('friends:get-connection-string'),
     pair: (connectionString: string) => ipcRenderer.invoke('friends:pair', connectionString),
-    remove: (id: string) => ipcRenderer.invoke('friends:remove', id)
+    remove: (id: string) => ipcRenderer.invoke('friends:remove', id),
+    setNickname: (id: string, nickname: string) =>
+      ipcRenderer.invoke('friends:set-nickname', id, nickname)
   },
   transfers: {
     send: (friendId: string, filePaths: string[]) =>
       ipcRenderer.invoke('transfer:send', friendId, filePaths),
+    sendText: (friendId: string, text: string) =>
+      ipcRenderer.invoke('transfer:send-text', friendId, text),
     accept: (transferId: string) => ipcRenderer.invoke('transfer:accept', transferId),
+    acceptWithPath: (transferId: string) =>
+      ipcRenderer.invoke('transfer:accept-with-path', transferId),
     decline: (transferId: string) => ipcRenderer.invoke('transfer:decline', transferId),
     cancel: (transferId: string) => ipcRenderer.invoke('transfer:cancel', transferId),
     onProgress: (callback: (data: unknown) => void) => {
@@ -26,6 +32,16 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
       ipcRenderer.on('transfer:incoming', listener)
       return () => ipcRenderer.removeListener('transfer:incoming', listener)
+    },
+    onFailed: (callback: (data: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
+      ipcRenderer.on('transfer:failed', listener)
+      return () => ipcRenderer.removeListener('transfer:failed', listener)
+    },
+    onCompleted: (callback: (data: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => callback(data)
+      ipcRenderer.on('transfer:completed', listener)
+      return () => ipcRenderer.removeListener('transfer:completed', listener)
     }
   },
   tunnel: {
@@ -34,6 +50,10 @@ const api = {
       ipcRenderer.on('tunnel:friend-status', listener)
       return () => ipcRenderer.removeListener('tunnel:friend-status', listener)
     }
+  },
+  history: {
+    list: (friendId?: string) => ipcRenderer.invoke('history:list', friendId),
+    clear: (friendId?: string) => ipcRenderer.invoke('history:clear', friendId)
   },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),

@@ -57,13 +57,20 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
     } catch {}
   }
 
+  const handleSaveAs = async (transferId: string) => {
+    try {
+      await (window.api as any)?.transfers?.acceptWithPath(transferId)
+      removeIncomingRequest(transferId)
+    } catch {}
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-8">
       {/* Device icon */}
       <div className="relative mb-6">
-        <div className="w-24 h-24 rounded-full bg-warp-accent/10 flex items-center justify-center accent-glow">
+        <div className="w-24 h-24 rounded-full bg-warp-accent/10 flex items-center justify-center shield-pulse">
           <div className="w-16 h-16 rounded-full bg-warp-accent/20 flex items-center justify-center">
-            <Shield size={32} className="text-warp-accent" />
+            <Shield size={32} className="text-warp-accent icon-glow" />
           </div>
         </div>
         <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-warp-online border-2 border-warp-bg pulse-online" />
@@ -117,6 +124,7 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
               request={req}
               onAccept={handleAccept}
               onDecline={handleDecline}
+              onSaveAs={handleSaveAs}
             />
           ))}
         </div>

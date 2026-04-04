@@ -1,13 +1,15 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, Notification, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { getOrCreateDeviceKeys, getDeviceShortId, setDeviceName, closeDatabase } from './services/key-manager'
+import { getOrCreateDeviceKeys, getDeviceShortId, setDeviceName, closeDatabase, getDatabase } from './services/key-manager'
 import { setAllFriendsOffline } from './services/friends-db'
 import { TunnelManager } from './services/tunnel-manager'
 import { registerFriendsIpc, reconnectAllFriends } from './ipc/friends.ipc'
-import { updateFriendOnlineStatus } from './services/friends-db'
+import { updateFriendOnlineStatus, incrementTransferCount } from './services/friends-db'
 import { TransferEngine } from './services/transfer-engine'
 import { registerTransferIpc } from './ipc/transfer.ipc'
+import { addTransferHistory } from './services/transfer-history-db'
+import { registerHistoryIpc } from './ipc/history.ipc'
 import { QueueManager } from './services/queue-manager'
 
 let mainWindow: BrowserWindow | null = null
@@ -188,10 +190,26 @@ function initializeTunnelManager(): void {
     )
   })
 
-  transferEngine.on('transfer-complete', (_id: string, direction: string) => {
+  transferEngine.on('transfer-complete', (_id: string, direction: string, friendId: string) => {
+    incrementTransferCount(friendId)
     if (direction === 'receiving') {
       showNotification('Transfer Complete', 'File received successfully')
     }
+  })
+
+  // Log completed transfers to history
+  transferEngine.on('transfer-complete', (transferId: string, direction: string, friendId: string) => {
+    const transfers = transferEngine!.getActiveTransfers()
+    const t = transfers.find((tr) => tr.transferId === transferId)
+    if (t) {
+      addTransferHistory(friendId, t.fileName, t.fileSize, direction as 'sending' | 'receiving', 'completed')
+    }
+  })
+
+  // Handle failed transfers — notify + log to history
+  transferEngine.on('transfer-failed', (transferId: string, _reason: string) => {
+    showNotification('Transfer Failed', 'A file transfer could not be completed')
+    mainWindow?.webContents.send('transfer:failed', { transferId })
   })
 }
 
@@ -223,6 +241,26 @@ ipcMain.handle('dialog:open-folder', async () => {
     properties: ['openDirectory']
   })
   return result.canceled ? null : result.filePaths[0]
+})
+
+ipcMain.handle('settings:get', (_event, key: string) => {
+  try {
+    const db = getDatabase()
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return { success: true, value: row?.value ?? null }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
+})
+
+ipcMain.handle('settings:set', (_event, key: string, value: string) => {
+  try {
+    const db = getDatabase()
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: (err as Error).message }
+  }
 })
 
 ipcMain.handle('settings:get-start-on-boot', () => {
@@ -268,6 +306,7 @@ app.whenReady().then(() => {
   initializeTunnelManager()
   registerFriendsIpc(tunnelManager!)
   registerTransferIpc(transferEngine!, () => mainWindow)
+  registerHistoryIpc()
   createWindow()
 
   // Try to reconnect to all saved friends after a short delay

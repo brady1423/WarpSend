@@ -8,7 +8,8 @@ import {
   addFriend,
   removeFriend,
   getFriendByPublicKey,
-  updateFriendOnlineStatus
+  updateFriendOnlineStatus,
+  updateFriendNickname
 } from '../services/friends-db'
 import {
   encodeConnectionString,
@@ -84,6 +85,16 @@ export function registerFriendsIpc(tunnelManager: TunnelManager): void {
       }
 
       return { success: true, friend }
+    } catch (err) {
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  // Set friend nickname
+  ipcMain.handle('friends:set-nickname', (_event, id: string, nickname: string) => {
+    try {
+      updateFriendNickname(id, nickname)
+      return { success: true }
     } catch (err) {
       return { success: false, error: (err as Error).message }
     }

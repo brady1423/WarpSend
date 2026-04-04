@@ -77,7 +77,8 @@ export class TransferEngine extends EventEmitter {
   constructor(tunnelManager: TunnelManager) {
     super()
     this.tunnelManager = tunnelManager
-    this.downloadFolder = path.join(app.getPath('downloads'))
+    this.downloadFolder = path.join(app.getPath('downloads'), 'WarpSend')
+    fs.mkdirSync(this.downloadFolder, { recursive: true })
 
     // Listen for control messages from the tunnel
     tunnelManager.on('control-message', (friendId: string, message: ControlMessage) => {
@@ -141,15 +142,21 @@ export class TransferEngine extends EventEmitter {
   /**
    * Accept an incoming transfer.
    */
-  acceptTransfer(transferId: string): void {
+  acceptTransfer(transferId: string, customSavePath?: string): void {
     const transfer = this.transfers.get(transferId)
     if (!transfer || transfer.direction !== 'receiving') return
 
     transfer.status = 'active'
 
+    // Determine save location
+    const saveDir = customSavePath ? path.dirname(customSavePath) : this.downloadFolder
+    const saveName = customSavePath ? path.basename(customSavePath) : transfer.fileName
+    ;(transfer as any)._customSavePath = customSavePath || null
+    ;(transfer as any)._saveName = saveName
+
     // Create temp file for receiving (fd-based for random-access writes)
-    const tempName = `${transfer.fileName}.warpsend-partial`
-    transfer.tempPath = path.join(this.downloadFolder, tempName)
+    const tempName = `${saveName}.warpsend-partial`
+    transfer.tempPath = path.join(saveDir, tempName)
     const fd = fs.openSync(transfer.tempPath, 'w')
     ;(transfer as any)._receiveFd = fd
 
@@ -160,6 +167,14 @@ export class TransferEngine extends EventEmitter {
     }
     this.tunnelManager.sendControl(transfer.friendId, accept)
     this.emitProgress(transfer)
+  }
+
+  /**
+   * Get the file name for a pending transfer (used by Save As dialog).
+   */
+  getTransferFileName(transferId: string): string | null {
+    const transfer = this.transfers.get(transferId)
+    return transfer ? transfer.fileName : null
   }
 
   /**
@@ -313,7 +328,7 @@ export class TransferEngine extends EventEmitter {
           transferId: transfer.transferId
         })
         this.emitProgress(transfer)
-        this.emit('transfer-complete', transfer.transferId, transfer.direction)
+        this.emit('transfer-complete', transfer.transferId, transfer.direction, transfer.friendId)
       }
     }
 
@@ -456,13 +471,14 @@ export class TransferEngine extends EventEmitter {
 
     // Rename from .warpsend-partial to final name
     if (transfer.tempPath) {
-      const finalPath = path.join(this.downloadFolder, transfer.fileName)
-      const uniquePath = this.getUniquePath(finalPath)
+      const customPath = (transfer as any)._customSavePath
+      const finalPath = customPath || path.join(this.downloadFolder, transfer.fileName)
+      const uniquePath = customPath ? finalPath : this.getUniquePath(finalPath)
       fs.renameSync(transfer.tempPath, uniquePath)
       transfer.filePath = uniquePath
     }
     this.emitProgress(transfer)
-    this.emit('transfer-complete', transferId, 'receiving')
+    this.emit('transfer-complete', transferId, 'receiving', transfer.friendId)
   }
 
   private handleTransferDeclined(transferId: string): void {

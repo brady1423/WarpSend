@@ -3,6 +3,7 @@ import { File, Folder, Type, Clipboard, Upload, X as XIcon } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../stores/app-store'
 import { ProgressBar, formatSize } from '../shared/ProgressBar'
+import { TextInputModal } from '../shared/TextInputModal'
 import type { Friend } from '../../types'
 
 const selectionButtons = [
@@ -19,6 +20,9 @@ export function SendTab() {
   const queueCounts = useAppStore((s) => s.queueCounts)
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [sending, setSending] = useState<string | null>(null) // friendId being sent to
+  const [showTextModal, setShowTextModal] = useState(false)
+  const [textModalInitial, setTextModalInitial] = useState('')
+  const [pendingText, setPendingText] = useState<string | null>(null)
 
   useEffect(() => {
     loadFriends()
@@ -45,9 +49,21 @@ export function SendTab() {
     } catch {}
   }
 
-  const handleSelectionClick = (id: string) => {
+  const handleSelectionClick = async (id: string) => {
     if (id === 'file') handleSelectFile()
     else if (id === 'folder') handleSelectFolder()
+    else if (id === 'text') {
+      setTextModalInitial('')
+      setShowTextModal(true)
+    } else if (id === 'paste') {
+      try {
+        const clipText = await navigator.clipboard.readText()
+        if (clipText) {
+          setTextModalInitial(clipText)
+          setShowTextModal(true)
+        }
+      } catch {}
+    }
   }
 
   const removeFile = (index: number) => {
@@ -55,11 +71,18 @@ export function SendTab() {
   }
 
   const handleSendToFriend = async (friend: Friend) => {
-    if (selectedFiles.length === 0 || !friend.isOnline) return
+    if (selectedFiles.length === 0 && !pendingText) return
+    if (!friend.isOnline) return
     setSending(friend.id)
     try {
-      await window.api?.transfers?.send(friend.id, selectedFiles)
+      if (selectedFiles.length > 0) {
+        await window.api?.transfers?.send(friend.id, selectedFiles)
+      }
+      if (pendingText) {
+        await (window.api as any)?.transfers?.sendText(friend.id, pendingText)
+      }
       setSelectedFiles([])
+      setPendingText(null)
     } catch {}
     setSending(null)
   }
@@ -86,7 +109,7 @@ export function SendTab() {
       </div>
 
       {/* Selected files */}
-      {selectedFiles.length > 0 && (
+      {(selectedFiles.length > 0 || pendingText) && (
         <div className="flex flex-wrap gap-2 mb-6">
           {selectedFiles.map((file, i) => (
             <span
@@ -99,8 +122,16 @@ export function SendTab() {
               </button>
             </span>
           ))}
+          {pendingText && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-warp-accent/10 text-warp-accent text-xs rounded-lg border border-warp-accent/20">
+              Text message ({pendingText.length} chars)
+              <button onClick={() => setPendingText(null)} className="no-drag text-warp-accent/60 hover:text-warp-accent">
+                <XIcon size={12} />
+              </button>
+            </span>
+          )}
           <span className="text-xs text-warp-text-muted self-center ml-1">
-            {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+            {selectedFiles.length + (pendingText ? 1 : 0)} item{selectedFiles.length + (pendingText ? 1 : 0) !== 1 ? 's' : ''} selected
           </span>
         </div>
       )}
@@ -138,10 +169,10 @@ export function SendTab() {
             <button
               key={friend.id}
               onClick={() => handleSendToFriend(friend)}
-              disabled={!friend.isOnline || selectedFiles.length === 0}
+              disabled={!friend.isOnline || (selectedFiles.length === 0 && !pendingText)}
               className={clsx(
                 'no-drag w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-150',
-                friend.isOnline && selectedFiles.length > 0
+                friend.isOnline && (selectedFiles.length > 0 || !!pendingText)
                   ? 'bg-warp-card hover:bg-warp-card-hover border-warp-border cursor-pointer'
                   : friend.isOnline
                     ? 'bg-warp-card border-warp-border'
@@ -150,7 +181,7 @@ export function SendTab() {
             >
               <div className="relative">
                 <div className="w-10 h-10 rounded-full bg-warp-accent/10 flex items-center justify-center">
-                  <span className="text-sm font-semibold text-warp-accent">{friend.displayName[0]}</span>
+                  <span className="text-sm font-semibold text-warp-accent">{(friend.nickname || friend.displayName)[0]}</span>
                 </div>
                 <div
                   className={clsx(
@@ -161,7 +192,7 @@ export function SendTab() {
               </div>
 
               <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-warp-text">{friend.displayName}</p>
+                <p className="text-sm font-medium text-warp-text">{friend.nickname || friend.displayName}</p>
                 <p className="text-xs text-warp-text-muted">
                   {friend.isOnline ? 'Online' : friend.lastSeenAt ? `Last seen ${new Date(friend.lastSeenAt).toLocaleDateString()}` : 'Never connected'}
                 </p>
@@ -173,7 +204,7 @@ export function SendTab() {
                 </span>
               )}
 
-              {friend.isOnline && selectedFiles.length > 0 && sending !== friend.id && (
+              {friend.isOnline && (selectedFiles.length > 0 || !!pendingText) && sending !== friend.id && (
                 <Upload size={16} className="text-warp-accent" />
               )}
 
@@ -181,7 +212,7 @@ export function SendTab() {
                 <div className="w-4 h-4 border-2 border-warp-accent border-t-transparent rounded-full animate-spin" />
               )}
 
-              {!friend.isOnline && selectedFiles.length === 0 && (
+              {!friend.isOnline && selectedFiles.length === 0 && !pendingText && (
                 <span className="text-xs text-warp-text-muted">{friend.transferCount} transfers</span>
               )}
             </button>
@@ -194,6 +225,14 @@ export function SendTab() {
           </div>
         )}
       </div>
+
+      {showTextModal && (
+        <TextInputModal
+          initialText={textModalInitial}
+          onSend={setPendingText}
+          onClose={() => setShowTextModal(false)}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import { getDatabase } from './key-manager'
 export interface FriendRow {
   id: string
   display_name: string
+  nickname: string | null
   public_key: string
   last_known_endpoint: string | null
   last_seen_at: string | null
@@ -19,6 +20,7 @@ export interface FriendRow {
 export interface Friend {
   id: string
   displayName: string
+  nickname: string | null
   publicKey: string
   lastKnownEndpoint: string | null
   lastSeenAt: string | null
@@ -31,6 +33,7 @@ function rowToFriend(row: FriendRow): Friend {
   return {
     id: row.id,
     displayName: row.display_name,
+    nickname: row.nickname ?? null,
     publicKey: row.public_key,
     lastKnownEndpoint: row.last_known_endpoint,
     lastSeenAt: row.last_seen_at,
@@ -101,6 +104,11 @@ export function updateFriendEndpoint(id: string, endpoint: string): void {
 export function incrementTransferCount(id: string): void {
   const db = getDatabase()
   db.prepare('UPDATE friends SET transfer_count = transfer_count + 1 WHERE id = ?').run(id)
+}
+
+export function updateFriendNickname(id: string, nickname: string): void {
+  const db = getDatabase()
+  db.prepare('UPDATE friends SET nickname = ? WHERE id = ?').run(nickname || null, id)
 }
 
 export function setAllFriendsOffline(): void {

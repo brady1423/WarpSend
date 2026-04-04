@@ -1,6 +1,7 @@
 export interface Friend {
   id: string
   displayName: string
+  nickname: string | null
   publicKey: string
   lastKnownEndpoint: string | null
   lastSeenAt: string | null
@@ -23,10 +24,12 @@ export interface TransferProgress {
   friendId: string
   fileName: string
   fileSize: number
-  chunksSent: number
+  completedChunks: number
   totalChunks: number
+  bytesTransferred: number
   speed: number // bytes per second
   direction: 'sending' | 'receiving'
+  status: string
 }
 
 export interface QueuedTransfer {
@@ -46,10 +49,21 @@ export interface DeviceInfo {
   id: string
 }
 
+export interface TransferHistoryEntry {
+  id: string
+  friendId: string
+  fileName: string
+  fileSize: number
+  direction: 'sending' | 'receiving'
+  status: string
+  createdAt: string
+  completedAt: string | null
+}
+
 export interface AppSettings {
   deviceName: string
   downloadFolder: string
-  theme: 'dark' | 'light'
+  theme: 'midnight-teal' | 'onyx-black'
   startOnBoot: boolean
   notifications: boolean
 }
