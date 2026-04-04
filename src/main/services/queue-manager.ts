@@ -11,6 +11,7 @@ import path from 'path'
 import { getDatabase } from './key-manager'
 import { TransferEngine } from './transfer-engine'
 import { TunnelManager } from './tunnel-manager'
+import { CHUNK_SIZE } from './protocol'
 
 export interface QueuedItem {
   id: string
@@ -66,7 +67,7 @@ export class QueueManager {
         fileSize: stat.size,
         status: 'queued',
         chunksSent: 0,
-        totalChunks: Math.ceil(stat.size / (64 * 1024)),
+        totalChunks: Math.ceil(stat.size / CHUNK_SIZE),
         createdAt: new Date().toISOString(),
         completedAt: null
       }

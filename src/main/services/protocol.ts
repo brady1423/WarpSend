@@ -103,7 +103,7 @@ export type ControlMessage =
  *   [N bytes]  chunk data (up to CHUNK_SIZE)
  */
 
-export const CHUNK_SIZE = 64 * 1024 // 64KB
+export const CHUNK_SIZE = 16 * 1024 // 16KB — sized to reduce UDP fragmentation
 export const MSG_TYPE_CHUNK = 0x0001
 export const CHUNK_HEADER_SIZE = 2 + 16 + 4 + 4 // 26 bytes
 

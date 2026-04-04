@@ -40,9 +40,13 @@ export interface ActiveTransfer {
   readStream?: fs.ReadStream
   windowSize: number
   unackedChunks: Set<number>
+  chunkSendTimes: Map<number, number>
+  chunkRetryCount: Map<number, number>
+  retransmitTimer?: ReturnType<typeof setInterval>
   // Receiver-specific
   writeStream?: fs.WriteStream
   tempPath?: string
+  receivedChunks?: Set<number>
 }
 
 export interface TransferProgress {
@@ -58,8 +62,10 @@ export interface TransferProgress {
   status: string
 }
 
-const WINDOW_SIZE = 4
+const WINDOW_SIZE = 8
 const ACK_TIMEOUT = 5000
+const MAX_RETRIES_PER_CHUNK = 5
+const RETRANSMIT_CHECK_INTERVAL = 1000
 const PROGRESS_THROTTLE = 250 // ms between progress events
 
 export class TransferEngine extends EventEmitter {
@@ -110,7 +116,9 @@ export class TransferEngine extends EventEmitter {
       startTime: Date.now(),
       bytesTransferred: 0,
       windowSize: WINDOW_SIZE,
-      unackedChunks: new Set()
+      unackedChunks: new Set(),
+      chunkSendTimes: new Map(),
+      chunkRetryCount: new Map()
     }
 
     this.transfers.set(transferId, transfer)
@@ -139,10 +147,11 @@ export class TransferEngine extends EventEmitter {
 
     transfer.status = 'active'
 
-    // Create temp file for receiving
+    // Create temp file for receiving (fd-based for random-access writes)
     const tempName = `${transfer.fileName}.warpsend-partial`
     transfer.tempPath = path.join(this.downloadFolder, tempName)
-    transfer.writeStream = fs.createWriteStream(transfer.tempPath)
+    const fd = fs.openSync(transfer.tempPath, 'w')
+    ;(transfer as any)._receiveFd = fd
 
     // Send accept message
     const accept: TransferAccept = {
@@ -230,7 +239,10 @@ export class TransferEngine extends EventEmitter {
       startTime: Date.now(),
       bytesTransferred: 0,
       windowSize: WINDOW_SIZE,
-      unackedChunks: new Set()
+      unackedChunks: new Set(),
+      chunkSendTimes: new Map(),
+      chunkRetryCount: new Map(),
+      receivedChunks: new Set()
     }
 
     this.transfers.set(request.transferId, transfer)
@@ -278,6 +290,10 @@ export class TransferEngine extends EventEmitter {
         try {
           this.tunnelManager.sendData(transfer.friendId, chunkMsg)
           transfer.unackedChunks.add(chunkIndex)
+          transfer.chunkSendTimes.set(chunkIndex, Date.now())
+          if (!transfer.chunkRetryCount.has(chunkIndex)) {
+            transfer.chunkRetryCount.set(chunkIndex, 0)
+          }
         } catch {
           // Connection lost — will retry on reconnect
           transfer.status = 'paused'
@@ -289,6 +305,7 @@ export class TransferEngine extends EventEmitter {
 
       // Check if all chunks sent and acknowledged
       if (transfer.completedChunks >= transfer.totalChunks) {
+        if (transfer.retransmitTimer) clearInterval(transfer.retransmitTimer)
         fs.closeSync(fd)
         transfer.status = 'completed'
         this.tunnelManager.sendControl(transfer.friendId, {
@@ -304,6 +321,50 @@ export class TransferEngine extends EventEmitter {
     ;(transfer as any)._sendNextChunks = sendNextChunks
     ;(transfer as any)._fd = fd
 
+    // Retransmission timer — resend chunks that haven't been ACK'd within ACK_TIMEOUT
+    transfer.retransmitTimer = setInterval(() => {
+      if (transfer.status !== 'active') {
+        clearInterval(transfer.retransmitTimer)
+        return
+      }
+
+      const now = Date.now()
+      for (const [idx, sentTime] of transfer.chunkSendTimes) {
+        if (!transfer.unackedChunks.has(idx)) {
+          transfer.chunkSendTimes.delete(idx)
+          transfer.chunkRetryCount.delete(idx)
+          continue
+        }
+
+        if (now - sentTime >= ACK_TIMEOUT) {
+          const retries = transfer.chunkRetryCount.get(idx) ?? 0
+          if (retries >= MAX_RETRIES_PER_CHUNK) {
+            clearInterval(transfer.retransmitTimer)
+            transfer.status = 'failed'
+            this.emitProgress(transfer)
+            this.emit('transfer-failed', transfer.transferId, 'Max retries exceeded')
+            this.cleanup(transfer.transferId)
+            return
+          }
+
+          try {
+            const offset = idx * CHUNK_SIZE
+            const size = Math.min(CHUNK_SIZE, transfer.fileSize - offset)
+            const buf = Buffer.alloc(size)
+            fs.readSync(fd, buf, 0, size, offset)
+            const chunkMsg = encodeChunk(transfer.transferId, idx, buf)
+            this.tunnelManager.sendData(transfer.friendId, chunkMsg)
+            transfer.chunkSendTimes.set(idx, now)
+            transfer.chunkRetryCount.set(idx, retries + 1)
+          } catch {
+            transfer.status = 'paused'
+            clearInterval(transfer.retransmitTimer)
+            break
+          }
+        }
+      }
+    }, RETRANSMIT_CHECK_INTERVAL)
+
     sendNextChunks()
   }
 
@@ -316,11 +377,19 @@ export class TransferEngine extends EventEmitter {
       const transfer = this.transfers.get(transferId)
       if (!transfer || transfer.direction !== 'receiving' || transfer.status !== 'active') return
 
-      // Write chunk to file
-      if (transfer.writeStream) {
+      // Deduplicate: if we already received this chunk, just re-ACK (original ACK may have been lost)
+      if (transfer.receivedChunks?.has(chunkIndex)) {
+        const ack: ChunkAck = { type: 'CHUNK_ACK', transferId, chunkIndex }
+        this.tunnelManager.sendControl(friendId, ack)
+        return
+      }
+      transfer.receivedChunks?.add(chunkIndex)
+
+      // Write chunk at correct offset (random-access fd-based write)
+      const fd = (transfer as any)._receiveFd
+      if (fd !== undefined) {
         const offset = chunkIndex * CHUNK_SIZE
-        // For sequential writes, just write; for random access we'd need more logic
-        transfer.writeStream.write(chunkData)
+        fs.writeSync(fd, chunkData, 0, chunkData.length, offset)
       }
 
       transfer.completedChunks++
@@ -347,7 +416,12 @@ export class TransferEngine extends EventEmitter {
     const transfer = this.transfers.get(ack.transferId)
     if (!transfer || transfer.direction !== 'sending') return
 
+    // Guard duplicate ACKs (receiver may re-ACK retransmitted chunks)
+    if (!transfer.unackedChunks.has(ack.chunkIndex)) return
+
     transfer.unackedChunks.delete(ack.chunkIndex)
+    transfer.chunkSendTimes.delete(ack.chunkIndex)
+    transfer.chunkRetryCount.delete(ack.chunkIndex)
     transfer.completedChunks++
     transfer.bytesTransferred += Math.min(
       CHUNK_SIZE,
@@ -369,19 +443,26 @@ export class TransferEngine extends EventEmitter {
     if (!transfer || transfer.direction !== 'receiving') return
 
     transfer.status = 'completed'
-    if (transfer.writeStream) {
-      transfer.writeStream.end(async () => {
-        // Rename from .warpsend-partial to final name
-        if (transfer.tempPath) {
-          const finalPath = path.join(this.downloadFolder, transfer.fileName)
-          const uniquePath = this.getUniquePath(finalPath)
-          fs.renameSync(transfer.tempPath, uniquePath)
-          transfer.filePath = uniquePath
-        }
-        this.emitProgress(transfer)
-        this.emit('transfer-complete', transferId, 'receiving')
-      })
+
+    // Close the receive fd and truncate to exact file size
+    const fd = (transfer as any)._receiveFd
+    if (fd !== undefined) {
+      fs.closeSync(fd)
+      ;(transfer as any)._receiveFd = undefined
+      if (transfer.tempPath) {
+        fs.truncateSync(transfer.tempPath, transfer.fileSize)
+      }
     }
+
+    // Rename from .warpsend-partial to final name
+    if (transfer.tempPath) {
+      const finalPath = path.join(this.downloadFolder, transfer.fileName)
+      const uniquePath = this.getUniquePath(finalPath)
+      fs.renameSync(transfer.tempPath, uniquePath)
+      transfer.filePath = uniquePath
+    }
+    this.emitProgress(transfer)
+    this.emit('transfer-complete', transferId, 'receiving')
   }
 
   private handleTransferDeclined(transferId: string): void {
@@ -481,10 +562,18 @@ export class TransferEngine extends EventEmitter {
     const transfer = this.transfers.get(transferId)
     if (!transfer) return
 
+    if (transfer.retransmitTimer) {
+      clearInterval(transfer.retransmitTimer)
+      transfer.retransmitTimer = undefined
+    }
     if (transfer.readStream) transfer.readStream.destroy()
     if (transfer.writeStream) transfer.writeStream.end()
     if ((transfer as any)._fd) {
       try { fs.closeSync((transfer as any)._fd) } catch {}
+    }
+    if ((transfer as any)._receiveFd !== undefined) {
+      try { fs.closeSync((transfer as any)._receiveFd) } catch {}
+      ;(transfer as any)._receiveFd = undefined
     }
 
     // Delete partial file on cancel/fail
