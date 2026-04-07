@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Friend, TransferProgress, TransferRequest, DeviceInfo, TextMessageEntry } from '../types'
+import type { Friend, TransferProgress, TransferRequest, DeviceInfo, TextMessageEntry, CompletedTransfer } from '../types'
 
 interface AppState {
   // Device
@@ -17,6 +17,9 @@ interface AppState {
   // Text messages
   textMessages: TextMessageEntry[]
 
+  // Recently completed transfers (for preview)
+  recentlyCompleted: CompletedTransfer[]
+
   // Actions
   setDeviceInfo: (info: DeviceInfo) => void
   setConnectionString: (cs: string) => void
@@ -28,6 +31,9 @@ interface AppState {
   addIncomingRequest: (request: TransferRequest) => void
   removeIncomingRequest: (transferId: string) => void
   addTextMessage: (msg: TextMessageEntry) => void
+  clearTextMessages: () => void
+  addRecentlyCompleted: (t: CompletedTransfer) => void
+  removeRecentlyCompleted: (transferId: string) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -38,6 +44,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeTransfers: [],
   incomingRequests: [],
   textMessages: [],
+  recentlyCompleted: [],
 
   setDeviceInfo: (info) => set({ deviceInfo: info }),
   setConnectionString: (cs) => set({ connectionString: cs }),
@@ -95,5 +102,17 @@ export const useAppStore = create<AppState>((set) => ({
   addTextMessage: (msg) =>
     set((state) => ({
       textMessages: [...state.textMessages, msg].slice(-100)
+    })),
+
+  clearTextMessages: () => set({ textMessages: [] }),
+
+  addRecentlyCompleted: (t) =>
+    set((state) => ({
+      recentlyCompleted: [...state.recentlyCompleted, t].slice(-5)
+    })),
+
+  removeRecentlyCompleted: (transferId) =>
+    set((state) => ({
+      recentlyCompleted: state.recentlyCompleted.filter((t) => t.transferId !== transferId)
     }))
 }))

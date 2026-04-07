@@ -115,8 +115,8 @@ export function registerTransferIpc(
   })
 
   // Forward transfer completion
-  transferEngine.on('transfer-complete', (transferId: string, direction: string) => {
-    getMainWindow()?.webContents.send('transfer:completed', { transferId, direction })
+  transferEngine.on('transfer-complete', (transferId: string, direction: string, _friendId: string, fileName: string, _fileSize: number, filePath: string) => {
+    getMainWindow()?.webContents.send('transfer:completed', { transferId, direction, fileName, filePath })
   })
 
   // Forward transfer failures to renderer

@@ -62,6 +62,11 @@ const api = {
       return () => ipcRenderer.removeListener('text:incoming', listener)
     }
   },
+  file: {
+    readTextPreview: (filePath: string) => ipcRenderer.invoke('file:read-text-preview', filePath),
+    readAsDataUrl: (filePath: string) => ipcRenderer.invoke('file:read-as-data-url', filePath),
+    openInFolder: (filePath: string) => ipcRenderer.invoke('file:open-in-folder', filePath)
+  },
   settings: {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),

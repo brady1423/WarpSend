@@ -201,12 +201,12 @@ function initializeTunnelManager(): void {
     )
   })
 
-  transferEngine.on('transfer-complete', (_id: string, direction: string, friendId: string, fileName: string, fileSize: number) => {
+  transferEngine.on('transfer-complete', (_id: string, direction: string, friendId: string, fileName: string, fileSize: number, filePath: string) => {
     incrementTransferCount(friendId)
     if (direction === 'receiving') {
       showNotification('Transfer Complete', 'File received successfully')
     }
-    addTransferHistory(friendId, fileName, fileSize, direction as 'sending' | 'receiving', 'completed')
+    addTransferHistory(friendId, fileName, fileSize, direction as 'sending' | 'receiving', 'completed', filePath)
   })
 
   // Handle incoming text messages

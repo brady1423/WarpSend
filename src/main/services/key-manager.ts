@@ -86,6 +86,14 @@ function initSchema(database: Database.Database): void {
   if (hasNickname.cnt === 0) {
     database.exec('ALTER TABLE friends ADD COLUMN nickname TEXT')
   }
+
+  // Migration: add file_path column to transfer_history
+  const hasFilePath = database.prepare(
+    "SELECT COUNT(*) as cnt FROM pragma_table_info('transfer_history') WHERE name='file_path'"
+  ).get() as { cnt: number }
+  if (hasFilePath.cnt === 0) {
+    database.exec('ALTER TABLE transfer_history ADD COLUMN file_path TEXT')
+  }
 }
 
 const ADJECTIVES = [
@@ -143,13 +151,13 @@ export function generateKeypair(): DeviceKeys {
 export function getOrCreateDeviceKeys(): DeviceInfo {
   const database = getDb()
 
-  const existing = database.prepare('SELECT * FROM device WHERE id = 1').get() as DeviceInfo | undefined
+  const existing = database.prepare('SELECT * FROM device WHERE id = 1').get() as Record<string, string> | undefined
   if (existing) {
     return {
-      publicKey: existing.publicKey ?? (existing as Record<string, string>).public_key,
-      privateKey: existing.privateKey ?? (existing as Record<string, string>).private_key,
-      deviceName: existing.deviceName ?? (existing as Record<string, string>).device_name,
-      createdAt: existing.createdAt ?? (existing as Record<string, string>).created_at
+      publicKey: existing.public_key ?? existing.publicKey,
+      privateKey: existing.private_key ?? existing.privateKey,
+      deviceName: existing.device_name ?? existing.deviceName,
+      createdAt: existing.created_at ?? existing.createdAt
     }
   }
 

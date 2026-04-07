@@ -58,6 +58,14 @@ export interface TransferHistoryEntry {
   status: string
   createdAt: string
   completedAt: string | null
+  filePath: string | null
+}
+
+export interface CompletedTransfer {
+  transferId: string
+  direction: 'sending' | 'receiving'
+  filePath: string | null
+  fileName: string
 }
 
 export interface TextMessageEntry {
@@ -78,6 +86,7 @@ export interface AppSettings {
 
 declare global {
   interface Window {
-    api: import('../../preload/index').WarpSendAPI
+    // Typed by contextBridge in preload — cross-project boundary, so typed loosely here
+    api: any
   }
 }

@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { UserPlus, Copy, Check, ArrowRight, X, Trash2, Clock, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
+import { UserPlus, Copy, Check, ArrowRight, X, Trash2, Clock, ArrowUpRight, ArrowDownLeft, Eye, EyeOff, FolderOpen } from 'lucide-react'
 import clsx from 'clsx'
 import { useAppStore } from '../../stores/app-store'
+import { FilePreview } from '../shared/FilePreview'
 
 export function FriendsTab() {
   const [showAddModal, setShowAddModal] = useState(false)
@@ -13,6 +14,7 @@ export function FriendsTab() {
   const [editName, setEditName] = useState('')
   const [selectedHistory, setSelectedHistory] = useState<string | null>(null)
   const [history, setHistory] = useState<any[]>([])
+  const [previewingId, setPreviewingId] = useState<string | null>(null)
   const friends = useAppStore((s) => s.friends)
   const setFriends = useAppStore((s) => s.setFriends)
   const connectionString = useAppStore((s) => s.connectionString)
@@ -203,16 +205,45 @@ export function FriendsTab() {
             {selectedHistory === friend.id && (
               <div className="ml-6 mt-1 mb-2 space-y-1">
                 {history.length > 0 ? history.map((h: any) => (
-                  <div key={h.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-warp-text-secondary">
-                    {h.direction === 'sending' ? (
-                      <ArrowUpRight size={12} className="text-warp-accent shrink-0" />
-                    ) : (
-                      <ArrowDownLeft size={12} className="text-warp-online shrink-0" />
+                  <div key={h.id}>
+                    <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-warp-text-secondary">
+                      {h.direction === 'sending' ? (
+                        <ArrowUpRight size={12} className="text-warp-accent shrink-0" />
+                      ) : (
+                        <ArrowDownLeft size={12} className="text-warp-online shrink-0" />
+                      )}
+                      <span className="truncate flex-1">{h.fileName}</span>
+                      {h.filePath && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => setPreviewingId(previewingId === h.id ? null : h.id)}
+                            className="no-drag p-0.5 text-warp-text-muted hover:text-warp-accent transition-colors"
+                            title={previewingId === h.id ? 'Hide preview' : 'Preview'}
+                          >
+                            {previewingId === h.id ? <EyeOff size={12} /> : <Eye size={12} />}
+                          </button>
+                          <button
+                            onClick={() => (window.api as any).file.openInFolder(h.filePath)}
+                            className="no-drag p-0.5 text-warp-text-muted hover:text-warp-accent transition-colors"
+                            title="Open in folder"
+                          >
+                            <FolderOpen size={12} />
+                          </button>
+                        </div>
+                      )}
+                      <span className="text-warp-text-muted shrink-0">
+                        {new Date(h.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {previewingId === h.id && h.filePath && (
+                      <div className="px-3 pb-2">
+                        <FilePreview
+                          filePath={h.filePath}
+                          fileName={h.fileName}
+                          onDismiss={() => setPreviewingId(null)}
+                        />
+                      </div>
                     )}
-                    <span className="truncate flex-1">{h.fileName}</span>
-                    <span className="text-warp-text-muted shrink-0">
-                      {new Date(h.createdAt).toLocaleDateString()}
-                    </span>
                   </div>
                 )) : (
                   <p className="text-xs text-warp-text-muted px-3 py-1.5">No transfer history</p>

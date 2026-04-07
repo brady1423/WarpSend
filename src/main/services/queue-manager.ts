@@ -180,7 +180,8 @@ export class QueueManager {
       }
 
       // Check file still exists
-      if (!fs.existsSync(item.file_path ?? item.filePath)) {
+      const itemPath = (item as any).file_path ?? item.filePath
+      if (!fs.existsSync(itemPath)) {
         db.prepare("UPDATE transfer_queue SET status = 'failed' WHERE id = ?").run(item.id)
         continue
       }
@@ -192,7 +193,7 @@ export class QueueManager {
         // Initiate the actual transfer via the transfer engine
         await this.transferEngine.initiateTransfer(
           friendId,
-          item.file_path ?? item.filePath
+          itemPath
         )
 
         // Wait for transfer to complete (simplified — in production, use proper event handling)

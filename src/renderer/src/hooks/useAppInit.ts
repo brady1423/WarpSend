@@ -16,7 +16,8 @@ export function useAppInit() {
     removeIncomingRequest,
     removeTransfer,
     setQueueCounts,
-    addTextMessage
+    addTextMessage,
+    addRecentlyCompleted
   } = useAppStore()
 
   useEffect(() => {
@@ -59,10 +60,18 @@ export function useAppInit() {
       showToast('Transfer failed — file could not be sent', 'error')
     })
 
-    // Subscribe to transfer completions — clean up incoming requests
+    // Subscribe to transfer completions — clean up incoming requests + track for preview
     const unsubCompleted = (api.transfers as any).onCompleted?.((data: any) => {
       removeTransfer(data.transferId)
       removeIncomingRequest(data.transferId)
+      if (data.filePath && data.fileName) {
+        addRecentlyCompleted({
+          transferId: data.transferId,
+          direction: data.direction,
+          filePath: data.filePath,
+          fileName: data.fileName
+        })
+      }
     })
 
     // Subscribe to incoming text messages

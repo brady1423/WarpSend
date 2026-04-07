@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Shield, Copy, Check, RefreshCw, MessageCircle } from 'lucide-react'
+import { Shield, Copy, Check, RefreshCw, MessageCircle, Trash2 } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { IncomingTransferCard } from '../shared/IncomingTransferCard'
 import { ProgressBar } from '../shared/ProgressBar'
+import { FilePreview } from '../shared/FilePreview'
 import type { DeviceInfo } from '../../types'
 
 interface ReceiveTabProps {
@@ -18,7 +19,10 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
   const removeIncomingRequest = useAppStore((s) => s.removeIncomingRequest)
   const activeTransfers = useAppStore((s) => s.activeTransfers)
   const textMessages = useAppStore((s) => s.textMessages)
+  const clearTextMessages = useAppStore((s) => s.clearTextMessages)
   const friends = useAppStore((s) => s.friends)
+  const recentlyCompleted = useAppStore((s) => s.recentlyCompleted)
+  const removeRecentlyCompleted = useAppStore((s) => s.removeRecentlyCompleted)
 
   const receivingTransfers = activeTransfers.filter((t) => t.direction === 'receiving')
 
@@ -114,6 +118,50 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
         </p>
       </div>
 
+      {/* Text messages — shown first for visibility */}
+      {textMessages.length > 0 && (
+        <div className="w-full max-w-md space-y-3 mb-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-medium text-warp-text-secondary uppercase tracking-wider">
+              Messages
+            </h3>
+            <button
+              onClick={clearTextMessages}
+              className="no-drag flex items-center gap-1 text-[10px] text-warp-text-muted hover:text-warp-error transition-colors"
+              title="Clear messages"
+            >
+              <Trash2 size={10} />
+              Clear
+            </button>
+          </div>
+          {textMessages.slice(-20).reverse().map((msg) => {
+            const friend = friends.find((f) => f.id === msg.friendId)
+            const senderName = friend?.nickname || friend?.displayName || 'Unknown'
+            return (
+              <div
+                key={msg.messageId}
+                className={`bg-warp-card rounded-xl border-l-4 p-3 ${
+                  msg.direction === 'sent'
+                    ? 'border-l-warp-accent ml-8'
+                    : 'border-l-warp-online mr-8'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <MessageCircle size={12} className={msg.direction === 'sent' ? 'text-warp-accent' : 'text-warp-online'} />
+                  <span className="text-xs text-warp-text-muted">
+                    {msg.direction === 'sent' ? `To ${senderName}` : `From ${senderName}`}
+                  </span>
+                </div>
+                <p className="text-sm text-warp-text whitespace-pre-wrap break-words">{msg.text}</p>
+                <p className="text-xs text-warp-text-muted mt-1.5">
+                  {new Date(msg.timestamp).toLocaleTimeString()}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Incoming transfer requests */}
       {incomingRequests.length > 0 && (
         <div className="w-full max-w-md space-y-3 mb-6">
@@ -134,7 +182,7 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
 
       {/* Active receiving transfers */}
       {receivingTransfers.length > 0 && (
-        <div className="w-full max-w-md space-y-3">
+        <div className="w-full max-w-md space-y-3 mb-6">
           <h3 className="text-xs font-medium text-warp-text-secondary uppercase tracking-wider">
             Receiving
           </h3>
@@ -150,42 +198,27 @@ export function ReceiveTab({ deviceInfo }: ReceiveTabProps) {
         </div>
       )}
 
-      {/* Text messages */}
-      {textMessages.length > 0 && (
+      {/* Recently received — file previews */}
+      {recentlyCompleted.filter((t) => t.direction === 'receiving' && t.filePath).length > 0 && (
         <div className="w-full max-w-md space-y-3 mb-6">
           <h3 className="text-xs font-medium text-warp-text-secondary uppercase tracking-wider">
-            Messages
+            Recently Received
           </h3>
-          {textMessages.slice(-20).reverse().map((msg) => {
-            const friend = friends.find((f) => f.id === msg.friendId)
-            const senderName = friend?.nickname || friend?.displayName || 'Unknown'
-            return (
-              <div
-                key={msg.messageId}
-                className={`bg-warp-card rounded-xl border p-3 ${
-                  msg.direction === 'sent'
-                    ? 'border-warp-accent/20 ml-8'
-                    : 'border-warp-border mr-8'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <MessageCircle size={12} className={msg.direction === 'sent' ? 'text-warp-accent' : 'text-warp-online'} />
-                  <span className="text-xs text-warp-text-muted">
-                    {msg.direction === 'sent' ? `To ${senderName}` : `From ${senderName}`}
-                  </span>
-                </div>
-                <p className="text-sm text-warp-text whitespace-pre-wrap break-words">{msg.text}</p>
-                <p className="text-xs text-warp-text-muted mt-1.5">
-                  {new Date(msg.timestamp).toLocaleTimeString()}
-                </p>
-              </div>
-            )
-          })}
+          {recentlyCompleted
+            .filter((t) => t.direction === 'receiving' && t.filePath)
+            .map((t) => (
+              <FilePreview
+                key={t.transferId}
+                filePath={t.filePath!}
+                fileName={t.fileName}
+                onDismiss={() => removeRecentlyCompleted(t.transferId)}
+              />
+            ))}
         </div>
       )}
 
       {/* Empty state */}
-      {incomingRequests.length === 0 && receivingTransfers.length === 0 && textMessages.length === 0 && (
+      {incomingRequests.length === 0 && receivingTransfers.length === 0 && textMessages.length === 0 && recentlyCompleted.length === 0 && (
         <p className="text-sm text-warp-text-muted mt-4">
           No incoming transfers
         </p>

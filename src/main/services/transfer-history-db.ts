@@ -14,6 +14,7 @@ export interface TransferHistoryRow {
   status: string
   created_at: string
   completed_at: string | null
+  file_path: string | null
 }
 
 export interface TransferHistoryEntry {
@@ -25,6 +26,7 @@ export interface TransferHistoryEntry {
   status: string
   createdAt: string
   completedAt: string | null
+  filePath: string | null
 }
 
 function rowToEntry(row: TransferHistoryRow): TransferHistoryEntry {
@@ -36,7 +38,8 @@ function rowToEntry(row: TransferHistoryRow): TransferHistoryEntry {
     direction: row.direction as 'sending' | 'receiving',
     status: row.status,
     createdAt: row.created_at,
-    completedAt: row.completed_at
+    completedAt: row.completed_at,
+    filePath: row.file_path ?? null
   }
 }
 
@@ -45,18 +48,19 @@ export function addTransferHistory(
   fileName: string,
   fileSize: number,
   direction: 'sending' | 'receiving',
-  status: string
+  status: string,
+  filePath?: string
 ): TransferHistoryEntry {
   const db = getDatabase()
   const id = uuidv4()
   const now = new Date().toISOString()
 
   db.prepare(
-    `INSERT INTO transfer_history (id, friend_id, file_name, file_size, direction, status, created_at, completed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, friendId, fileName, fileSize, direction, status, now, status === 'completed' ? now : null)
+    `INSERT INTO transfer_history (id, friend_id, file_name, file_size, direction, status, created_at, completed_at, file_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, friendId, fileName, fileSize, direction, status, now, status === 'completed' ? now : null, filePath ?? null)
 
-  return { id, friendId, fileName, fileSize, direction, status, createdAt: now, completedAt: status === 'completed' ? now : null }
+  return { id, friendId, fileName, fileSize, direction, status, createdAt: now, completedAt: status === 'completed' ? now : null, filePath: filePath ?? null }
 }
 
 export function getTransferHistory(friendId?: string): TransferHistoryEntry[] {
